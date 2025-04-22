@@ -1,26 +1,13 @@
-/**
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-/* The script will generate a public and private key pair and log the same in the console.
- * Copy paste the private key into your /.env file and public key should be added to your account.
- * For more details visit: https://developers.facebook.com/docs/whatsapp/flows/guides/implementingyourflowendpoint#upload_public_key
- *
- * Run this script using command below:
- *
- *             node src/keyGenerator.js {passphrase}
- *
- */
-
 import crypto from "crypto";
+import fs from "fs";
+import dotenv from "dotenv";
 
-const passphrase = process.argv[2];
+dotenv.config();
+
+const passphrase = process.env.PASSPHRASE;
 if (!passphrase) {
   throw new Error(
-    "Passphrase is empty. Please include passphrase argument to generate the keys like: node src/keyGenerator.js {passphrase}"
+    "⚠️  Passphrase vacía. Usá: node src/keyGenerator.js {passphrase}"
   );
 }
 
@@ -39,17 +26,21 @@ try {
     },
   });
 
-  console.log(`Successfully created your public private key pair. Please copy the below values into your /.env file
-************* COPY PASSPHRASE & PRIVATE KEY BELOW TO .env FILE *************
+  // Escribir la clave pública en archivo
+  fs.writeFileSync("public_key.pem", keyPair.publicKey, "utf8");
+
+  // Mostrar por consola lo que se copia al .env
+  console.log(`
+************* COPIAR EN .env *************
 PASSPHRASE="${passphrase}"
 
 PRIVATE_KEY="${keyPair.privateKey}"
-************* COPY PASSPHRASE & PRIVATE KEY ABOVE TO .env FILE *************
+************* COPIAR EN .env *************
 
-************* COPY PUBLIC KEY BELOW *************
-${keyPair.publicKey}
-************* COPY PUBLIC KEY ABOVE *************
+📁 La clave pública está guardada en public_key.pem
 `);
+
 } catch (err) {
-  console.error("Error while creating public private key pair:", err);
+  console.error("❌ Error generando las claves:", err);
 }
+

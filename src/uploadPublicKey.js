@@ -1,8 +1,12 @@
 import fs from 'fs';
 import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+import querystring from 'querystring';
 
-const phoneNumberId = process.env.PHONE_NUMBER_ID; // ⚠️ REEMPLAZÁ ESTO
-const accessToken = process.env.ACCESS_TOKEN; // ⚠️ REEMPLAZÁ ESTO
+dotenv.config();
+
+const phoneNumberId = process.env.PHONE_NUMBER_ID;
+const accessToken = process.env.USER_TOKEN;
 
 console.log('📂 Leyendo clave pública...');
 let publicKey = '';
@@ -14,21 +18,21 @@ try {
   process.exit(1);
 }
 
-const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/whatsapp_business_flows_public_key`;
+const url = `https://graph.facebook.com/v22.0/${phoneNumberId}/whatsapp_business_encryption`;
 
-const payload = {
-  key: publicKey
-};
+const body = querystring.stringify({
+  business_public_key: publicKey
+});
 
-console.log('🚀 Enviando petición a Facebook...');
+console.log('🚀 Enviando clave pública...');
 
 fetch(url, {
   method: 'POST',
   headers: {
     'Authorization': `Bearer ${accessToken}`,
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/x-www-form-urlencoded',
   },
-  body: JSON.stringify(payload)
+  body
 })
   .then(async res => {
     const json = await res.json();
@@ -39,5 +43,5 @@ fetch(url, {
     }
   })
   .catch(err => {
-    console.error('❌ Error haciendo fetch:', err.message);
+    console.error('❌ Error en el fetch:', err.message);
   });
