@@ -108,3 +108,16 @@ function isRequestSignatureValid(req) {
   }
   return true;
 }
+
+function isValidFlowToken(flowToken) {
+  if (!FLOW_TOKEN) {
+    console.warn("Flow Token is not set up. Please Add your flow token in /.env file to check for flow token validation");
+    return true;
+  }
+
+  if (flowToken !== FLOW_TOKEN) {
+    console.error("Error: Flow Token did not match");
+    return false;
+  }
+  return true;
+}
