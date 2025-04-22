@@ -33,6 +33,7 @@ MIIE...
 */
 
 app.post("/", async (req, res) => {
+  console.log("📩 ¡Solicitud recibida en /!");
   if (!PRIVATE_KEY) {
     throw new Error(
       'Private key is empty. Please check your env variable "PRIVATE_KEY".'
