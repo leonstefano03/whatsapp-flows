@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const passphrase = process.env.PASSPHRASE;
+const passphrase = process.argv[2] || process.env.PASSPHRASE;
 if (!passphrase) {
   throw new Error(
     "⚠️  Passphrase vacía. Usá: node src/keyGenerator.js {passphrase}"

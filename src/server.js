@@ -1,124 +1,102 @@
 /**
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
+ * WhatsApp Flows Server - Multi Flow Routing
+ * Based on Meta example, adapted to support multiple flows by route
  */
 
 import express from "express";
-import { decryptRequest, encryptResponse, FlowEndpointException } from "./encryption.js";
-import { getNextScreen } from "./flow.js";
 import crypto from "crypto";
+import { decryptRequest, encryptResponse, FlowEndpointException } from "./encryption.js";
+
+// Importar todos los flows disponibles
+import * as appointment from "./screens/flowAppointment.js";
+import * as flow from "./screens/flow.js";
 
 const app = express();
+const flows = {
+  appointment,
+  flow,
+};
 
 app.use(
   express.json({
-    // store the raw request body to use it for signature verification
     verify: (req, res, buf, encoding) => {
       req.rawBody = buf?.toString(encoding || "utf8");
     },
-  }),
+  })
 );
 
 const { FLOW_TOKEN, APP_SECRET, PRIVATE_KEY, PASSPHRASE = "", PORT = "3000" } = process.env;
 
-/*
-Example:
-```-----[REPLACE THIS] BEGIN RSA PRIVATE KEY-----
-MIIE...
-...
-...AQAB
------[REPLACE THIS] END RSA PRIVATE KEY-----```
-*/
+// Registrar una ruta POST para cada flow
+Object.entries(flows).forEach(([route, flowModule]) => {
+  app.post(`/${route}`, async (req, res) => {
+    console.log(`📩 Request received on /${route}`);
 
-app.post("/", async (req, res) => {
-  console.log("📩 ¡Solicitud recibida en /!");
-  if (!PRIVATE_KEY) {
-    throw new Error(
-      'Private key is empty. Please check your env variable "PRIVATE_KEY".'
-    );
-  }
-
-  if(!isRequestSignatureValid(req)) {
-    // Return status code 432 if request signature does not match.
-    // To learn more about return error codes visit: https://developers.facebook.com/docs/whatsapp/flows/reference/error-codes#endpoint_error_codes
-    return res.status(432).send();
-  }
-
-  let decryptedRequest = null;
-  try {
-    decryptedRequest = decryptRequest(req.body, PRIVATE_KEY, PASSPHRASE);
-  } catch (err) {
-    console.error(err);
-    if (err instanceof FlowEndpointException) {
-      return res.status(err.statusCode).send();
+    if (!PRIVATE_KEY) {
+      console.error("❌ PRIVATE_KEY is missing in environment variables");
+      return res.status(500).send("Server configuration error.");
     }
-    return res.status(500).send();
-  }
 
-  const { aesKeyBuffer, initialVectorBuffer, decryptedBody } = decryptedRequest;
-  console.log("💬 Decrypted Request:", decryptedBody);
+    if (!isRequestSignatureValid(req)) {
+      return res.status(432).send(); // Signature invalid
+    }
 
-  // TODO: Uncomment this block and add your flow token validation logic.
-  // If the flow token becomes invalid, return HTTP code 427 to disable the flow and show the message in `error_msg` to the user
-  // Refer to the docs for details https://developers.facebook.com/docs/whatsapp/flows/reference/error-codes#endpoint_error_codes
+    let decryptedRequest;
+    try {
+      decryptedRequest = decryptRequest(req.body, PRIVATE_KEY, PASSPHRASE);
+    } catch (err) {
+      console.error("❌ Decryption error:", err);
+      if (err instanceof FlowEndpointException) {
+        return res.status(err.statusCode).send();
+      }
+      return res.status(500).send();
+    }
 
-  //  if (!isValidFlowToken(decryptedBody.flow_token)) {
-  //   const error_response = {
-  //     error_msg: `The message is no longer available`,
-  //   };
-  //   return res
-  //     .status(427)
-  //     .send(
-  //       encryptResponse(error_response, aesKeyBuffer, initialVectorBuffer)
-  //     );
-  // }
- 
-  const screenResponse = await getNextScreen(decryptedBody);
-  console.log("👉 Response to Encrypt:", screenResponse);
+    const { aesKeyBuffer, initialVectorBuffer, decryptedBody } = decryptedRequest;
+    console.log("💬 Decrypted body:", decryptedBody);
 
-  res.send(encryptResponse(screenResponse, aesKeyBuffer, initialVectorBuffer));
+    try {
+      const screenResponse = await flowModule.getNextScreen(decryptedBody);
+      console.log("👉 Encrypted response ready to send.");
+      res.send(encryptResponse(screenResponse, aesKeyBuffer, initialVectorBuffer));
+    } catch (err) {
+      console.error("❌ Flow handler error:", err);
+      return res.status(500).send();
+    }
+  });
 });
 
+// Ruta GET para saludos simples
 app.get("/", (req, res) => {
-  res.send(`<pre>Nothing to see here.
-Checkout README.md to start.</pre>`);
+  res.send(`<pre>✅ WhatsApp Flows server is running.
+POST to /appointment or /compras to begin.
+</pre>`);
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is listening on port: ${PORT}`);
+  console.log(`🚀 Server is listening on port ${PORT}`);
 });
 
+// Validar firma HMAC SHA-256
 function isRequestSignatureValid(req) {
-  if(!APP_SECRET) {
-    console.warn("App Secret is not set up. Please Add your app secret in /.env file to check for request validation");
+  if (!APP_SECRET) {
+    console.warn("⚠️ APP_SECRET not configured. Skipping signature validation.");
     return true;
   }
 
   const signatureHeader = req.get("x-hub-signature-256");
+  if (!signatureHeader) return false;
+
   const signatureBuffer = Buffer.from(signatureHeader.replace("sha256=", ""), "utf-8");
 
   const hmac = crypto.createHmac("sha256", APP_SECRET);
-  const digestString = hmac.update(req.rawBody).digest('hex');
-  const digestBuffer = Buffer.from(digestString, "utf-8");
+  const digest = hmac.update(req.rawBody).digest("hex");
+  const digestBuffer = Buffer.from(digest, "utf-8");
 
-  if ( !crypto.timingSafeEqual(digestBuffer, signatureBuffer)) {
-    console.error("Error: Request Signature did not match");
-    return false;
-  }
-  return true;
-}
-
-function isValidFlowToken(flowToken) {
-  if (!FLOW_TOKEN) {
-    console.warn("Flow Token is not set up. Please Add your flow token in /.env file to check for flow token validation");
-    return true;
+  const isValid = crypto.timingSafeEqual(digestBuffer, signatureBuffer);
+  if (!isValid) {
+    console.error("❌ Invalid request signature.");
   }
 
-  if (flowToken !== FLOW_TOKEN) {
-    console.error("Error: Flow Token did not match");
-    return false;
-  }
-  return true;
+  return isValid;
 }
